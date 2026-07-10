@@ -1,0 +1,16 @@
+flowchart TD
+    A[Usuario inicia la evaluación] --> B[Selecciona una pregunta]
+    B --> C[Frontend envía audio, respuesta esperada y frames]
+    C --> D[Controlador de evaluación]
+    D --> E[Servicio de transcripción de audio]
+    E --> F[Servicio evaluador]
+    D --> G[Servicio de visión]
+    G --> H[Detección de rostro y ojos]
+    H --> I[Análisis de atención]
+    F --> J[Comparación de respuesta]
+    E --> J
+    I --> K[Generación de resultado]
+    J --> K
+    K --> L[Persistencia de evaluación]
+    L --> M[Respuesta al usuario]
+    M --> N[Visualización de porcentaje, texto transcrito y atención]

@@ -1,0 +1,11 @@
+services:
+  alumno_db:
+    image: postgres:15.2
+    container_name: preguntas_db
+    restart: always
+    environment:
+      - POSTGRES_DB=preguntas_db
+      - POSTGRES_USER=janobaf2
+      - POSTGRES_PASSWORD=00247887
+    ports:
+      - 5435:5432

@@ -1,0 +1,50 @@
+<mxfile host="app.diagrams.net" modified="2026-07-07T00:00:00.000Z" agent="GitHub Copilot" version="24.7.17">
+  <diagram id="funcionamiento" name="Funcionamiento">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="Usuario inicia la evaluación" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="Selecciona una pregunta" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="40" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="Frontend envía audio, respuesta esperada y frames" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="460" y="40" width="260" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="Controlador de evaluación" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="40" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="Servicio de transcripción" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="140" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="Servicio de visión" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="830" y="140" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="Servicio evaluador" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="240" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="Detección de rostro y ojos" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="830" y="240" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="Resultado y persistencia" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="340" width="200" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="Respuesta al usuario" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="720" y="430" width="200" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" edge="1" source="2" target="3" parent="1"/>
+        <mxCell id="13" edge="1" source="3" target="4" parent="1"/>
+        <mxCell id="14" edge="1" source="4" target="5" parent="1"/>
+        <mxCell id="15" edge="1" source="5" target="6" parent="1"/>
+        <mxCell id="16" edge="1" source="5" target="7" parent="1"/>
+        <mxCell id="17" edge="1" source="6" target="8" parent="1"/>
+        <mxCell id="18" edge="1" source="7" target="9" parent="1"/>
+        <mxCell id="19" edge="1" source="8" target="10" parent="1"/>
+        <mxCell id="20" edge="1" source="9" target="10" parent="1"/>
+        <mxCell id="21" edge="1" source="10" target="11" parent="1"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
