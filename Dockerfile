@@ -7,6 +7,9 @@ COPY . .
 RUN chmod +x mvnw
 RUN ./mvnw clean package -DskipTests
 
+# Mostrar el contenido de target
+RUN ls -lah target
+
 EXPOSE 8080
 
-CMD ["java","-jar","target/*.jar"]
+CMD ["sh", "-c", "ls -lah target && java -jar target/preguntas-0.0.1-SNAPSHOT.jar"]
