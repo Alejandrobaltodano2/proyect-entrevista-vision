@@ -5,6 +5,7 @@ WORKDIR /app
 COPY . .
 
 RUN chmod +x mvnw
+RUN apt-get update && apt-get install -y libgtk2.0-0 libavcodec-dev libavformat-dev libswscale-dev && rm -rf /var/lib/apt/lists/*
 RUN ./mvnw clean package -DskipTests
 
 # Mostrar el contenido de target

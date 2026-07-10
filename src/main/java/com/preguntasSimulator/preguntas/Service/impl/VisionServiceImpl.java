@@ -4,6 +4,7 @@ import com.preguntasSimulator.preguntas.Service.VisionService;
 import com.preguntasSimulator.preguntas.models.dtos.AnalisisFrameDTO;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import org.opencv.core.Mat;
@@ -26,6 +27,8 @@ import java.util.List;
 
 
 @Service
+@DependsOn("openCvConfig")   // <-- fuerza a que OpenCvConfig se inicialice primero
+
 @AllArgsConstructor
 @NoArgsConstructor
 public class VisionServiceImpl implements VisionService {
