@@ -25,14 +25,17 @@ public final class ImagenUtils {
             return null;
         }
 
+        MatOfByte buffer = null;
         try {
             int comaIndex = dataUrl.indexOf(',');
             String base64Data = comaIndex >= 0 ? dataUrl.substring(comaIndex + 1) : dataUrl;
             byte[] bytes = Base64.getDecoder().decode(base64Data);
 
-            Mat bgr = Imgcodecs.imdecode(new MatOfByte(bytes), Imgcodecs.IMREAD_COLOR);
+            buffer = new MatOfByte(bytes);
+            Mat bgr = Imgcodecs.imdecode(buffer, Imgcodecs.IMREAD_COLOR);
             if (bgr.empty()) {
                 log.warn("dataUrlToBgr: la imagen no pudo decodificarse (Mat vacio)");
+                bgr.release();
                 return null;
             }
             return bgr;
@@ -40,6 +43,10 @@ public final class ImagenUtils {
         } catch (IllegalArgumentException e) {
             log.warn("dataUrlToBgr: data URL invalida - {}", e.getMessage());
             return null;
+        } finally {
+            if (buffer != null) {
+                buffer.release();
+            }
         }
     }
 }

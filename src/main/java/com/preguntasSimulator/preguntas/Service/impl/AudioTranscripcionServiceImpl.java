@@ -61,6 +61,11 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
 
     private static final int REINTENTOS_RED = 2;
 
+    // Reutilizable y thread-safe: crear uno nuevo en cada transcripcion
+    // (como se hacia antes dentro de parsearRespuesta) desperdicia CPU
+    // en cada peticion sin ningun beneficio.
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
     private final RestTemplate restTemplate;
     private final TranscripcionRepository transcripcionRepository;
 
@@ -305,7 +310,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
             return null;
         }
 
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = JSON_MAPPER;
         String mejorTranscripcion = null;
         double mejorConfianza = -1.0;
 

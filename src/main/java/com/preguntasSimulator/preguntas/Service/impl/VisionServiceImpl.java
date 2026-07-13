@@ -27,8 +27,7 @@ import java.util.List;
 
 
 @Service
-@DependsOn("openCvConfig")   // <-- fuerza a que OpenCvConfig se inicialice primero
-
+@DependsOn("openCvConfig")
 @AllArgsConstructor
 @NoArgsConstructor
 public class VisionServiceImpl implements VisionService {
@@ -69,19 +68,23 @@ public class VisionServiceImpl implements VisionService {
     @Override
     public AnalisisFrameDTO analizarFrame(Mat frameBgr) {
         Mat gray = preprocesar(frameBgr);
+        try {
+            Rect[] faces = detectarRostros(gray);
+            if (faces.length == 0) {
+                return new AnalisisFrameDTO(false, "no_face", 0, 0);
+            }
 
-        Rect[] faces = detectarRostros(gray);
-        if (faces.length == 0) {
-            return new AnalisisFrameDTO(false, "no_face", 0, 0);
+            Rect rostroPrincipal = rostroMasGrande(faces);
+            List<Rect> ojos = detectarOjos(gray, rostroPrincipal);
+
+            boolean mirando = ojos.size() >= 2;
+            String estado = mirando ? "ok" : "no_eyes";
+
+            return new AnalisisFrameDTO(mirando, estado, faces.length, ojos.size());
+        } finally {
+
+            gray.release();
         }
-
-        Rect rostroPrincipal = rostroMasGrande(faces);
-        List<Rect> ojos = detectarOjos(gray, rostroPrincipal);
-
-        boolean mirando = ojos.size() >= 2;
-        String estado = mirando ? "ok" : "no_eyes";
-
-        return new AnalisisFrameDTO(mirando, estado, faces.length, ojos.size());
     }
 
     /** Convierte a escala de grises y ecualiza el histograma. */
@@ -94,9 +97,13 @@ public class VisionServiceImpl implements VisionService {
 
     private Rect[] detectarRostros(Mat gray) {
         MatOfRect faces = new MatOfRect();
-        faceCascade.detectMultiScale(
-                gray, faces, FACE_SCALE, FACE_NEIGHBORS, 0, FACE_MIN_SIZE, new Size());
-        return faces.toArray();
+        try {
+            faceCascade.detectMultiScale(
+                    gray, faces, FACE_SCALE, FACE_NEIGHBORS, 0, FACE_MIN_SIZE, new Size());
+            return faces.toArray();
+        } finally {
+            faces.release();
+        }
     }
 
     /** Devuelve el rostro (bounding box) con mayor area. */
@@ -119,20 +126,25 @@ public class VisionServiceImpl implements VisionService {
         int altoMitad = rostro.height / 2;
         Rect roiRect = new Rect(rostro.x, rostro.y, rostro.width, altoMitad);
         Mat roi = new Mat(gray, roiRect);
-
         MatOfRect ojosDetectados = new MatOfRect();
-        eyeCascade.detectMultiScale(
-                roi, ojosDetectados, EYE_SCALE, EYE_NEIGHBORS, 0, EYE_MIN_SIZE, new Size());
 
-        // Filtro adicional: el ojo debe estar en el tercio superior de la ROI
-        int tercioSuperior = rostro.height / 3;
-        List<Rect> ojosFiltrados = new ArrayList<>();
-        for (Rect ojo : ojosDetectados.toArray()) {
-            if (ojo.y < tercioSuperior) {
-                ojosFiltrados.add(ojo);
+        try {
+            eyeCascade.detectMultiScale(
+                    roi, ojosDetectados, EYE_SCALE, EYE_NEIGHBORS, 0, EYE_MIN_SIZE, new Size());
+
+            // Filtro adicional: el ojo debe estar en el tercio superior de la ROI
+            int tercioSuperior = rostro.height / 3;
+            List<Rect> ojosFiltrados = new ArrayList<>();
+            for (Rect ojo : ojosDetectados.toArray()) {
+                if (ojo.y < tercioSuperior) {
+                    ojosFiltrados.add(ojo);
+                }
             }
+            return ojosFiltrados;
+        } finally {
+            roi.release();
+            ojosDetectados.release();
         }
-        return ojosFiltrados;
     }
 
     private String extraerRecursoATemporal(String rutaClasspath) {

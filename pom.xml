@@ -94,6 +94,13 @@
             <version>4.9.0-0</version>
         </dependency>
 
+        <!-- Source: https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-http-client -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-http-client</artifactId>
+            <version>4.1.0</version>
+            <scope>compile</scope>
+        </dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
