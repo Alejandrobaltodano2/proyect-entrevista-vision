@@ -119,7 +119,15 @@ public class EvaluacionController{
             return Map.of();
         }
         Mat bgr = ImagenUtils.dataUrlToBgr(frameUrl);
-        return bgr != null ? visionService.analizarFrame(bgr).toMap() : Map.of();
+        if (bgr == null) {
+            return Map.of();
+        }
+        try {
+            return visionService.analizarFrame(bgr).toMap();
+        } finally {
+
+            bgr.release();
+        }
     }
 
     /** Calcula el porcentaje de atencion a partir de los contadores del cliente. */

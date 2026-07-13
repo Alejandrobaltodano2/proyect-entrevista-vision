@@ -10,17 +10,16 @@ import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
 import java.util.List;
 
 @Service
 
 public class PreguntasServiceImpl implements PreguntasService {
 
+    private static final int CANTIDAD_PREGUNTAS_MOSTRADAS = 5;
+
     @Autowired
     private PreguntasRepository preguntasRepository;
-
-    private PreguntasMapper preguntasMapper;
 
     @Override
     public void guardarPregunta(PreguntasDTO pregunta) {
@@ -37,12 +36,7 @@ public class PreguntasServiceImpl implements PreguntasService {
 
     @Override
     public List<Preguntas> listarPreguntas() {
-        List<Preguntas> preguntas = preguntasRepository.findAll();
-        Collections.shuffle(preguntas);
-
-        return preguntas.stream()
-                .limit(2)
-                .toList();
+        return preguntasRepository.obtenerAleatorias(CANTIDAD_PREGUNTAS_MOSTRADAS);
     }
 
     @Override
