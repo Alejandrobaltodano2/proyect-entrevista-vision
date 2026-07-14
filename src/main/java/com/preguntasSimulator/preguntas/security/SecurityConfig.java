@@ -84,7 +84,9 @@ public class SecurityConfig {
         configuracion.setAllowedOriginPatterns(List.of(
                 "http://127.0.0.1:*",
                 "http://localhost:*",
-                "https://*.devtunnels.ms"
+                "https://*.devtunnels.ms",
+
+                "https://front-proyect-vision.onrender.com"
         ));
         configuracion.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuracion.setAllowedHeaders(List.of("*"));
