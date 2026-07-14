@@ -5,8 +5,11 @@ import com.preguntasSimulator.preguntas.models.Transcripcion;
 import com.preguntasSimulator.preguntas.models.dtos.TranscripcionResponseDTO;
 import com.preguntasSimulator.preguntas.repository.TranscripcionRepository;
 import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -14,9 +17,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -26,6 +31,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 @Service
@@ -36,11 +42,13 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
 
     private static final int TAMANIO_MINIMO_WAV = 44;
 
-    private static final String GOOGLE_STT_URL = "https://www.google.com/speech-api/v2/recognize";
-    private static final String GOOGLE_API_KEY = "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw";
-
-    // Cuántas alternativas le pedimos a Google (nos quedamos con la de mayor confianza)
-    private static final int MAX_ALTERNATIVAS = 5;
+    private static final String GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+  
+    @Value("${groq.api.key}")
+    private String GROQ_API_KEY;
+    // whisper-large-v3-turbo: la version rapida de Whisper que ofrece Groq,
+    // pensada justo para este caso (transcribir audio corto casi al instante).
+    private static final String GROQ_MODEL = "whisper-large-v3-turbo";
 
     // Percentil que usamos como referencia del "nivel típico de voz" (0-1).
     // Usamos el percentil en vez del pico absoluto porque un solo clic o golpe
@@ -87,34 +95,43 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
                     AudioSystem.getAudioInputStream(new ByteArrayInputStream(wavBytes));
             AudioFormat formato = audioInputStream.getFormat();
             int sampleRate = (int) formato.getSampleRate();
+            int canales = formato.getChannels();
 
             log.info("Formato de audio recibido: {} canal(es), {} bits, {} Hz, encoding={}",
-                    formato.getChannels(), formato.getSampleSizeInBits(), sampleRate, formato.getEncoding());
+                    canales, formato.getSampleSizeInBits(), sampleRate, formato.getEncoding());
 
             byte[] pcmData = audioInputStream.readAllBytes();
+            byte[] audioParaEnviar;
 
             // --- Pre-procesamiento para mejorar reconocimiento con voz baja o ruido ---
             if (formato.getSampleSizeInBits() == 16
                     && formato.getEncoding() == AudioFormat.Encoding.PCM_SIGNED) {
                 pcmData = filtroPasaAltos(pcmData, sampleRate);
                 pcmData = normalizarGanancia(pcmData);
+                // Groq (a diferencia del endpoint viejo de Google) necesita un
+                // archivo de audio real con cabecera, no muestras PCM crudas:
+                // reconstruimos un WAV valido alrededor de las muestras ya
+                // procesadas.
+                audioParaEnviar = construirWav(pcmData, sampleRate, canales, 16);
             } else {
                 // Si el audio no es PCM de 16 bits con signo, el procesamiento de arriba
                 // interpretaría mal los bytes y corrompería el audio en vez de mejorarlo.
                 // Esto es una señal fuerte de que hay que revisar cómo se está grabando
-                // el WAV del lado del cliente.
+                // el WAV del lado del cliente. En este caso mandamos el archivo original
+                // tal cual llego, sin tocarlo.
                 log.warn("Formato de audio no es PCM_SIGNED de 16 bits (es {} de {} bits). " +
                         "Se omite el pre-procesamiento para no corromper el audio; " +
                         "revisar la grabación del cliente.", formato.getEncoding(), formato.getSampleSizeInBits());
+                audioParaEnviar = wavBytes;
             }
 
-            String textoReconocido = enviarAGoogleSTTConReintentos(pcmData, sampleRate, idiomaFinal);
+            String textoReconocido = enviarAGroqConReintentos(audioParaEnviar, idiomaFinal);
             boolean exito = textoReconocido != null && !textoReconocido.isBlank();
 
             if (exito) {
                 log.info("Transcripcion -> «{}»", textoReconocido);
             } else {
-                log.warn("Google STT: audio no reconocido (silencio, ruido o voz poco clara)");
+                log.warn("Groq: audio no reconocido (silencio, ruido o voz poco clara)");
             }
 
             return guardarYRetornar(exito ? textoReconocido : "", exito, idiomaFinal);
@@ -123,7 +140,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
             log.error("Formato de audio no soportado: {}", e.getMessage());
             return guardarYRetornar("", false, idiomaFinal);
         } catch (RestClientException e) {
-            log.error("Google STT error de red: {}", e.getMessage());
+            log.error("Groq error de red: {}", e.getMessage());
             return guardarYRetornar("", false, idiomaFinal);
         } catch (IOException e) {
             log.error("Error leyendo el audio WAV: {}", e.getMessage());
@@ -168,7 +185,6 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         double referenciaNormalizada = referencia / 32767.0;
 
         if (referenciaNormalizada < NIVEL_MINIMO_CON_SENAL) {
-            // No hay señal de voz real (silencio o ruido de piso), no amplificamos
             log.warn("Audio sin señal detectable (nivel {}%), se omite amplificación",
                     String.format("%.2f", referenciaNormalizada * 100));
             return pcmData;
@@ -178,7 +194,6 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         ganancia = Math.min(ganancia, GANANCIA_MAXIMA);
 
         if (ganancia <= 1.05) {
-            // El audio ya está en un nivel adecuado, no vale la pena tocarlo
             return pcmData;
         }
 
@@ -195,13 +210,10 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
     }
 
     /**
-     * Limitador suave tipo "soft clipping" usando tanh. En vez de recortar en
-     * seco las muestras que exceden el rango de 16 bits (lo que suena como
-     * distorsión digital dura), las comprime progresivamente cerca del límite,
-     * preservando mejor la inteligibilidad de la voz cuando amplificamos fuerte.
+     * Limitador suave tipo "soft clipping" usando tanh.
      */
     private double limitadorSuave(double muestra) {
-        double umbral = 30000.0; // por debajo de esto no tocamos nada
+        double umbral = 30000.0;
         double maximo = Short.MAX_VALUE;
 
         double abs = Math.abs(muestra);
@@ -218,17 +230,14 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
     }
 
     /**
-     * Filtro pasa-altos IIR de primer orden. Elimina ruido de baja frecuencia
-     * (zumbido eléctrico, aire acondicionado, retumbe de micrófono, viento)
-     * que ensucia la señal y confunde al reconocedor, sin afectar el rango de
-     * frecuencias donde vive la voz humana (~85 Hz en adelante).
+     * Filtro pasa-altos IIR de primer orden.
      */
     private byte[] filtroPasaAltos(byte[] pcmData, int sampleRate) {
         if (pcmData.length < 4) {
             return pcmData;
         }
 
-        double frecuenciaCorte = 80.0; // Hz, por debajo de la voz humana típica
+        double frecuenciaCorte = 80.0;
         double rc = 1.0 / (2 * Math.PI * frecuenciaCorte);
         double dt = 1.0 / sampleRate;
         double alpha = rc / (rc + dt);
@@ -257,18 +266,18 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
     }
 
     /**
-     * Igual que enviarAGoogleSTT pero con reintentos ante fallos de red
+     * Igual que enviarAGroq pero con reintentos ante fallos de red
      * transitorios (útil cuando la conexión es inestable).
      */
-    private String enviarAGoogleSTTConReintentos(byte[] pcmData, int sampleRate, String idioma) {
+    private String enviarAGroqConReintentos(byte[] audioWav, String idioma) {
         RestClientException ultimaExcepcion = null;
 
         for (int intento = 1; intento <= REINTENTOS_RED; intento++) {
             try {
-                return enviarAGoogleSTT(pcmData, sampleRate, idioma);
+                return enviarAGroq(audioWav, idioma);
             } catch (RestClientException e) {
                 ultimaExcepcion = e;
-                log.warn("Intento {}/{} fallido al llamar a Google STT: {}", intento, REINTENTOS_RED, e.getMessage());
+                log.warn("Intento {}/{} fallido al llamar a Groq: {}", intento, REINTENTOS_RED, e.getMessage());
             }
         }
 
@@ -276,79 +285,80 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
     }
 
     /**
-     * Envia el audio PCM crudo a la API de Google, igual que hace
-     * recognizer.recognize_google(audio_data, language=idioma) en Python.
+     * Envia el WAV a la API de transcripcion de Groq (Whisper), que corre en
+     * hardware especializado (LPU) y responde mucho mas rapido que el
+     * endpoint no oficial de Google que se usaba antes.
      */
-    private String enviarAGoogleSTT(byte[] pcmData, int sampleRate, String idioma) {
+    private String enviarAGroq(byte[] audioWav, String idioma) {
         HttpHeaders headers = new HttpHeaders();
-        headers.set("Content-Type", "audio/l16; rate=" + sampleRate);
+        headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+        headers.setBearerAuth(GROQ_API_KEY);
 
-        HttpEntity<byte[]> request = new HttpEntity<>(pcmData, headers);
+        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+        body.add("file", new ByteArrayResource(audioWav) {
+            @Override
+            public String getFilename() {
+                return "audio.wav";
+            }
+        });
+        body.add("model", GROQ_MODEL);
+        body.add("language", idioma.split("-")[0]);
+        body.add("response_format", "json");
 
-        String url = UriComponentsBuilder.fromUriString(GOOGLE_STT_URL)
-                .queryParam("client", "chromium")
-                .queryParam("lang", idioma)
-                .queryParam("key", GOOGLE_API_KEY)
-                .queryParam("maxAlternatives", MAX_ALTERNATIVAS)
-                .queryParam("pFilter", 0) // no filtrar/censurar palabras, mejora precisión en frases informales
-                .toUriString();
+        HttpEntity<MultiValueMap<String, Object>> request = new HttpEntity<>(body, headers);
 
-        ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+        ResponseEntity<String> response = restTemplate.postForEntity(GROQ_STT_URL, request, String.class);
 
-        return parsearRespuesta(response.getBody());
+        return parsearRespuestaGroq(response.getBody());
     }
 
     /**
-     * La API de Google devuelve varias lineas NDJSON; la ultima linea con
-     * resultados "final" trae las alternativas de transcripcion. Ahora, en vez
-     * de quedarnos siempre con la primera alternativa, elegimos la de mayor
-     * "confidence" quando ese campo viene informado (mejora la precisión en
-     * condiciones de ruido, donde la primera opción no siempre es la mejor).
+     * Groq devuelve un JSON simple {"text": "..."}; a diferencia del formato
+     * NDJSON con alternativas que mandaba el endpoint viejo de Google.
      */
-    private String parsearRespuesta(String cuerpo) {
+    private String parsearRespuestaGroq(String cuerpo) {
         if (cuerpo == null || cuerpo.isBlank()) {
             return null;
         }
-
-        ObjectMapper mapper = JSON_MAPPER;
-        String mejorTranscripcion = null;
-        double mejorConfianza = -1.0;
-
-        for (String linea : cuerpo.split("\n")) {
-            if (linea.isBlank()) {
-                continue;
-            }
-            try {
-                JsonNode nodo = mapper.readTree(linea);
-                JsonNode resultado = nodo.path("result");
-                if (resultado.isArray() && resultado.size() > 0) {
-                    JsonNode alternativas = resultado.get(0).path("alternative");
-                    if (alternativas.isArray() && alternativas.size() > 0) {
-                        for (JsonNode alternativa : alternativas) {
-                            String transcript = alternativa.path("transcript").asText(null);
-                            if (transcript == null || transcript.isBlank()) {
-                                continue;
-                            }
-                            double confianza = alternativa.path("confidence").asDouble(-1.0);
-
-                            if (mejorTranscripcion == null) {
-                                // Primera transcripción válida que encontramos: la usamos
-                                // como base aunque no tenga "confidence".
-                                mejorTranscripcion = transcript;
-                                mejorConfianza = confianza;
-                            } else if (confianza > mejorConfianza) {
-                                mejorTranscripcion = transcript;
-                                mejorConfianza = confianza;
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ignorado) {
-                // Linea no es JSON valido (Google a veces manda lineas vacias intermedias)
-            }
+        try {
+            JsonNode nodo = JSON_MAPPER.readTree(cuerpo);
+            String texto = nodo.path("text").asText(null);
+            return (texto != null && !texto.isBlank()) ? texto.trim() : null;
+        } catch (Exception e) {
+            log.warn("No se pudo parsear la respuesta de Groq: {}", e.getMessage());
+            return null;
         }
+    }
 
-        return mejorTranscripcion;
+    /**
+     * Envuelve muestras PCM crudas (16 bits, little-endian) en un WAV valido
+     * con su cabecera RIFF, para que Groq (o cualquier servicio que espere un
+     * archivo de audio real) pueda leerlo.
+     */
+    private byte[] construirWav(byte[] pcmData, int sampleRate, int canales, int bitsPorMuestra) {
+        int byteRate = sampleRate * canales * bitsPorMuestra / 8;
+        int blockAlign = canales * bitsPorMuestra / 8;
+        int dataSize = pcmData.length;
+
+        ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+        header.put("RIFF".getBytes(StandardCharsets.US_ASCII));
+        header.putInt(36 + dataSize);
+        header.put("WAVE".getBytes(StandardCharsets.US_ASCII));
+        header.put("fmt ".getBytes(StandardCharsets.US_ASCII));
+        header.putInt(16);
+        header.putShort((short) 1);
+        header.putShort((short) canales);
+        header.putInt(sampleRate);
+        header.putInt(byteRate);
+        header.putShort((short) blockAlign);
+        header.putShort((short) bitsPorMuestra);
+        header.put("data".getBytes(StandardCharsets.US_ASCII));
+        header.putInt(dataSize);
+
+        byte[] wav = new byte[44 + dataSize];
+        System.arraycopy(header.array(), 0, wav, 0, 44);
+        System.arraycopy(pcmData, 0, wav, 44, dataSize);
+        return wav;
     }
 
     private TranscripcionResponseDTO guardarYRetornar(String texto, boolean exito, String idioma) {

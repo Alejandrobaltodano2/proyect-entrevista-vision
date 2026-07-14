@@ -44,7 +44,7 @@ public class DeteccionController {
 
         try {
             AnalisisFrameDTO resultado = visionService.analizarFrame(frameBgr);
-            log.debug("POST /detect → {}", resultado);
+
             return ResponseEntity.ok(resultado);
         } finally {
             // Mat reserva memoria nativa (fuera del heap de la JVM) que el
