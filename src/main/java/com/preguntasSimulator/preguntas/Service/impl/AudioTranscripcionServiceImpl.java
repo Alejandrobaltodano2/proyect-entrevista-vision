@@ -8,6 +8,7 @@ import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 @Service
-@AllArgsConstructor
+
 public class AudioTranscripcionServiceImpl implements AudioTranscripcionService {
 
     private static final Logger log = LoggerFactory.getLogger(AudioTranscripcionServiceImpl.class);
@@ -43,7 +44,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
     private static final int TAMANIO_MINIMO_WAV = 44;
 
     private static final String GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
-  
+
     @Value("${groq.api.key}")
     private String GROQ_API_KEY;
     // whisper-large-v3-turbo: la version rapida de Whisper que ofrece Groq,
@@ -74,8 +75,10 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
     // en cada peticion sin ningun beneficio.
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
-    private final RestTemplate restTemplate;
-    private final TranscripcionRepository transcripcionRepository;
+    @Autowired
+    private  RestTemplate restTemplate;
+    @Autowired
+    private  TranscripcionRepository transcripcionRepository;
 
 
     private static final String idiomaPorDefecto = "es-ES";
