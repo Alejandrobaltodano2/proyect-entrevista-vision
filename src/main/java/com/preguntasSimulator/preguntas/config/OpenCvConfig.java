@@ -6,12 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Carga la libreria nativa de OpenCV correcta para el SO/arquitectura actual
- * (Windows/Linux/Mac, x86_64/arm64) una sola vez al iniciar la aplicacion.
- * Equivale a "import cv2" en Python, donde la carga del binario nativo
- * ocurre de forma transparente.
- */
+
 @Configuration
 public class OpenCvConfig {
 

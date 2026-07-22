@@ -47,10 +47,7 @@ public class DeteccionController {
 
             return ResponseEntity.ok(resultado);
         } finally {
-            // Mat reserva memoria nativa (fuera del heap de la JVM) que el
-            // Garbage Collector de Java no libera de forma oportuna.
-            // Sin este release(), cada frame recibido deja memoria nativa
-            // "colgada" y el proceso puede quedarse sin RAM en Render.
+
             frameBgr.release();
         }
     }

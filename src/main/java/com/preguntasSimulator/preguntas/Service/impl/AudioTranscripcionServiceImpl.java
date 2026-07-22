@@ -4,8 +4,6 @@ import com.preguntasSimulator.preguntas.Service.AudioTranscripcionService;
 import com.preguntasSimulator.preguntas.models.Transcripcion;
 import com.preguntasSimulator.preguntas.models.dtos.TranscripcionResponseDTO;
 import com.preguntasSimulator.preguntas.repository.TranscripcionRepository;
-import lombok.AllArgsConstructor;
-import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,32 +45,19 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
 
     @Value("${groq.api.key}")
     private String GROQ_API_KEY;
-    // whisper-large-v3-turbo: la version rapida de Whisper que ofrece Groq,
-    // pensada justo para este caso (transcribir audio corto casi al instante).
+
     private static final String GROQ_MODEL = "whisper-large-v3-turbo";
 
-    // Percentil que usamos como referencia del "nivel típico de voz" (0-1).
-    // Usamos el percentil en vez del pico absoluto porque un solo clic o golpe
-    // en el micrófono puede disparar el pico sin que la voz real sea fuerte,
-    // haciendo que el AGC no amplifique lo suficiente.
     private static final double PERCENTIL_REFERENCIA = 0.95;
 
-    // Nivel objetivo para ese percentil, como fracción del máximo de 16 bits
     private static final double NIVEL_OBJETIVO = 0.60;
 
-    // Ganancia máxima permitida. Se sube bastante porque hablar bajo/susurrado
-    // puede estar 20-30 dB por debajo del nivel objetivo.
     private static final double GANANCIA_MAXIMA = 20.0;
 
-    // Por debajo de este nivel consideramos que es ruido de fondo o silencio,
-    // no voz, y no tiene sentido (ni es seguro) amplificarlo
     private static final double NIVEL_MINIMO_CON_SENAL = 0.01;
 
     private static final int REINTENTOS_RED = 2;
 
-    // Reutilizable y thread-safe: crear uno nuevo en cada transcripcion
-    // (como se hacia antes dentro de parsearRespuesta) desperdicia CPU
-    // en cada peticion sin ningun beneficio.
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
     @Autowired
@@ -111,17 +96,10 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
                     && formato.getEncoding() == AudioFormat.Encoding.PCM_SIGNED) {
                 pcmData = filtroPasaAltos(pcmData, sampleRate);
                 pcmData = normalizarGanancia(pcmData);
-                // Groq (a diferencia del endpoint viejo de Google) necesita un
-                // archivo de audio real con cabecera, no muestras PCM crudas:
-                // reconstruimos un WAV valido alrededor de las muestras ya
-                // procesadas.
+
                 audioParaEnviar = construirWav(pcmData, sampleRate, canales, 16);
             } else {
-                // Si el audio no es PCM de 16 bits con signo, el procesamiento de arriba
-                // interpretaría mal los bytes y corrompería el audio en vez de mejorarlo.
-                // Esto es una señal fuerte de que hay que revisar cómo se está grabando
-                // el WAV del lado del cliente. En este caso mandamos el archivo original
-                // tal cual llego, sin tocarlo.
+
                 log.warn("Formato de audio no es PCM_SIGNED de 16 bits (es {} de {} bits). " +
                         "Se omite el pre-procesamiento para no corromper el audio; " +
                         "revisar la grabación del cliente.", formato.getEncoding(), formato.getSampleSizeInBits());
@@ -151,17 +129,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         }
     }
 
-    /**
-     * Amplifica automáticamente el audio cuando la voz llegó muy baja (AGC).
-     * En vez de basarse en el pico absoluto (frágil: un solo clic o golpe al
-     * micrófono infla el pico y hace que el AGC "crea" que el audio ya es
-     * fuerte), usamos el percentil 95 de amplitud como referencia del nivel
-     * real de la voz. Así, transitorios aislados no bloquean la amplificación.
-     *
-     * Las muestras que aún así superen el rango de 16 bits tras aplicar la
-     * ganancia se comprimen con un limitador suave (tanh) en vez de recortarse
-     * a lo bruto, para evitar distorsión audible.
-     */
+
     private byte[] normalizarGanancia(byte[] pcmData) {
         if (pcmData.length < 2) {
             return pcmData;
@@ -212,9 +180,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         return salida.array();
     }
 
-    /**
-     * Limitador suave tipo "soft clipping" usando tanh.
-     */
+
     private double limitadorSuave(double muestra) {
         double umbral = 30000.0;
         double maximo = Short.MAX_VALUE;
@@ -232,9 +198,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         return signo * Math.min(comprimido, maximo);
     }
 
-    /**
-     * Filtro pasa-altos IIR de primer orden.
-     */
+
     private byte[] filtroPasaAltos(byte[] pcmData, int sampleRate) {
         if (pcmData.length < 4) {
             return pcmData;
@@ -268,10 +232,6 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         return salida.array();
     }
 
-    /**
-     * Igual que enviarAGroq pero con reintentos ante fallos de red
-     * transitorios (útil cuando la conexión es inestable).
-     */
     private String enviarAGroqConReintentos(byte[] audioWav, String idioma) {
         RestClientException ultimaExcepcion = null;
 
@@ -287,11 +247,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         throw ultimaExcepcion;
     }
 
-    /**
-     * Envia el WAV a la API de transcripcion de Groq (Whisper), que corre en
-     * hardware especializado (LPU) y responde mucho mas rapido que el
-     * endpoint no oficial de Google que se usaba antes.
-     */
+
     private String enviarAGroq(byte[] audioWav, String idioma) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
@@ -315,10 +271,6 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         return parsearRespuestaGroq(response.getBody());
     }
 
-    /**
-     * Groq devuelve un JSON simple {"text": "..."}; a diferencia del formato
-     * NDJSON con alternativas que mandaba el endpoint viejo de Google.
-     */
     private String parsearRespuestaGroq(String cuerpo) {
         if (cuerpo == null || cuerpo.isBlank()) {
             return null;
@@ -333,11 +285,7 @@ public class AudioTranscripcionServiceImpl implements AudioTranscripcionService 
         }
     }
 
-    /**
-     * Envuelve muestras PCM crudas (16 bits, little-endian) en un WAV valido
-     * con su cabecera RIFF, para que Groq (o cualquier servicio que espere un
-     * archivo de audio real) pueda leerlo.
-     */
+
     private byte[] construirWav(byte[] pcmData, int sampleRate, int canales, int bitsPorMuestra) {
         int byteRate = sampleRate * canales * bitsPorMuestra / 8;
         int blockAlign = canales * bitsPorMuestra / 8;

@@ -4,23 +4,19 @@ import com.preguntasSimulator.preguntas.Service.AudioTranscripcionService;
 import com.preguntasSimulator.preguntas.Service.EvaluadorService;
 import com.preguntasSimulator.preguntas.Service.VisionService;
 import com.preguntasSimulator.preguntas.models.Evaluacion;
-import com.preguntasSimulator.preguntas.models.dtos.EvaluacionResponseDTO;
-import com.preguntasSimulator.preguntas.models.dtos.ResultadoComparacionDTO;
-import com.preguntasSimulator.preguntas.models.dtos.TranscripcionResponseDTO;
+import com.preguntasSimulator.preguntas.models.dtos.*;
 import com.preguntasSimulator.preguntas.repository.EvaluacionRepository;
 import com.preguntasSimulator.preguntas.util.ImagenUtils;
 import org.opencv.core.Mat;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.core.Authentication;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -54,7 +50,6 @@ public class EvaluacionController{
             @RequestParam(value = "frames_mirando", defaultValue = "0") String framesMirando,
             @RequestParam(value = "frame", defaultValue = "") String frame) {
 
-        // ── Validar audio ──────────────────────────────────────────────
         if (audio == null || audio.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "No se recibió archivo de audio"));
         }
@@ -67,26 +62,20 @@ public class EvaluacionController{
             return ResponseEntity.badRequest().body(Map.of("error", "No se pudo leer el archivo de audio"));
         }
 
-        // ── Transcripcion ──────────────────────────────────────────────
         TranscripcionResponseDTO transcripcionResultado = transcribirAudio(wavBytes);
         String transcripcion = transcripcionResultado.texto();
         boolean reconocido = transcripcionResultado.exito();
 
-        // ── Comparacion con respuesta esperada ─────────────────────────
         ResultadoComparacionDTO comparacion = reconocido
                 ? evaluadorService.compararRespuestas(respuestaEsperada, transcripcion)
                 : new ResultadoComparacionDTO(0, List.of());
 
-        // ── Analisis del frame actual (opcional) ───────────────────────
         Map<String, Object> frameInfo = analizarFrameOpcional(frame);
 
-        // ── Metricas de atencion ────────────────────────────────────────
         int atencionPct = calcularAtencion(framesTotal, framesMirando);
 
-        // ── Persistir historial ─────────────────────────────────────────
         guardarEvaluacion(preguntaId, respuestaEsperada, transcripcion, comparacion, atencionPct);
 
-        // ── Construir respuesta ─────────────────────────────────────────
         EvaluacionResponseDTO respuesta = new EvaluacionResponseDTO(
                 transcripcion,
                 comparacion.porcentaje(),
@@ -99,11 +88,33 @@ public class EvaluacionController{
         return ResponseEntity.ok(respuesta);
     }
 
-    // ─────────────────────────────────────────────
-    // Helpers privados del endpoint
-    // ─────────────────────────────────────────────
+    @PostMapping("/resumen")
+    public ResponseEntity<?> resumen(@RequestBody ResumenEntrevistaRequestDTO body,
+                                     Authentication authentication) {
+        List<ItemEvaluacionDTO> resultados =
+                (body != null && body.resultados() != null) ? body.resultados() : List.of();
 
-    /** Lee el WAV recibido y lo transcribe. Sin conversion ni ffmpeg. */
+        if (resultados.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No hay resultados que resumir"));
+        }
+
+        int promedioPorcentaje = Math.round((float) resultados.stream()
+                .mapToInt(ItemEvaluacionDTO::porcentaje)
+                .average().orElse(0));
+
+        int promedioAtencion = Math.round((float) resultados.stream()
+                .mapToInt(ItemEvaluacionDTO::atencionPct)
+                .average().orElse(0));
+
+        List<SugerenciaDTO> sugerencias = evaluadorService.generarSugerencias(resultados);
+
+        log.info("Resumen de entrevista generado para usuario={} ({} preguntas, {} sugerencias)",
+                authentication.getName(), resultados.size(), sugerencias.size());
+
+        return ResponseEntity.ok(new ResumenEntrevistaResponseDTO(promedioPorcentaje, promedioAtencion, sugerencias));
+    }
+
+
     private TranscripcionResponseDTO transcribirAudio(byte[] wavBytes) {
         try {
             return audioTranscripcionService.transcribirWav(wavBytes, null);
@@ -113,7 +124,6 @@ public class EvaluacionController{
         }
     }
 
-    /** Analiza el frame si fue enviado; devuelve mapa vacio si no. */
     private Map<String, Object> analizarFrameOpcional(String frameUrl) {
         if (frameUrl == null || frameUrl.isBlank()) {
             return Map.of();
@@ -130,7 +140,6 @@ public class EvaluacionController{
         }
     }
 
-    /** Calcula el porcentaje de atencion a partir de los contadores del cliente. */
     private int calcularAtencion(String framesTotal, String framesMirando) {
         try {
             int total = Integer.parseInt(framesTotal);
@@ -141,7 +150,6 @@ public class EvaluacionController{
         }
     }
 
-    /** Genera un mensaje resumen legible para el usuario. */
     private String construirMensaje(boolean reconocido, int porcentaje, int atencion) {
         if (!reconocido) {
             return "No se reconoció audio — habla más cerca del micrófono.";

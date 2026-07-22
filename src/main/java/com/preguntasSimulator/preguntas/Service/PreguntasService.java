@@ -12,4 +12,7 @@ public interface PreguntasService {
     List<Preguntas> listarPreguntas();
     Preguntas obtenerPreguntaPorId(Integer id);
     void  eliminarPregunta(Integer id);
+
+    class EvaluadorService {
+    }
 }

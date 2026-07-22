@@ -1,16 +1,15 @@
 package com.preguntasSimulator.preguntas.Service.impl;
 
 import com.preguntasSimulator.preguntas.Service.EvaluadorService;
+import com.preguntasSimulator.preguntas.models.dtos.ItemEvaluacionDTO;
 import com.preguntasSimulator.preguntas.models.dtos.ResultadoComparacionDTO;
+import com.preguntasSimulator.preguntas.models.dtos.SugerenciaDTO;
 import org.springframework.stereotype.Service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -29,7 +28,11 @@ public class EvaluadorServiceImpl implements EvaluadorService {
             "esta", "ese", "esa", "esos", "esas"
     );
 
-    // Equivalente a str.maketrans("", "", ".,;:!?¡¿\"'()[]") + translate()
+    private static final int UMBRAL_RESPUESTA_BAJA = 60;
+
+
+    private static final int UMBRAL_ATENCION_BAJA = 80;
+
     private static final Pattern PUNTUACION = Pattern.compile("[.,;:!?¡¿\"'()\\[\\]]");
 
     @Override
@@ -63,10 +66,51 @@ public class EvaluadorServiceImpl implements EvaluadorService {
         return new ResultadoComparacionDTO(porcentaje, faltantes);
     }
 
-    /**
-     * Convierte un texto en un conjunto de palabras significativas.
-     * Elimina puntuacion basica, pasa a minusculas y filtra stopwords.
-     */
+    @Override
+    public List<SugerenciaDTO> generarSugerencias(List<ItemEvaluacionDTO> resultados) {
+        List<SugerenciaDTO> sugerencias = new ArrayList<>();
+
+        if (resultados == null || resultados.isEmpty()) {
+            return sugerencias;
+        }
+
+        // --- 1. Preguntas con acierto bajo: sugerir revisar la respuesta ---
+        for (int i = 0; i < resultados.size(); i++) {
+            ItemEvaluacionDTO item = resultados.get(i);
+            if (item.porcentaje() < UMBRAL_RESPUESTA_BAJA) {
+                String mensaje = String.format(
+                        "Pregunta %d: tu respuesta tuvo un acierto bajo (%d%%). Revisa la respuesta esperada.",
+                        i + 1, item.porcentaje());
+                sugerencias.add(new SugerenciaDTO("respuesta", mensaje, item.respuestaEsperada()));
+            }
+        }
+
+        // --- 2. Atencion a camara promedio de toda la entrevista ---
+        double promedioAtencion = resultados.stream()
+                .mapToInt(ItemEvaluacionDTO::atencionPct)
+                .average()
+                .orElse(0);
+
+        if (promedioAtencion < UMBRAL_ATENCION_BAJA) {
+            String mensaje = String.format(
+                    "Tu atención a la cámara fue de %.0f%%, por debajo del %d%% recomendado. " +
+                            "Debes mirar más hacia la cámara mientras respondes.",
+                    promedioAtencion, UMBRAL_ATENCION_BAJA);
+            sugerencias.add(new SugerenciaDTO("atencion", mensaje, null));
+        }
+
+        // --- 3. Si no hubo nada que corregir, un mensaje positivo ---
+        if (sugerencias.isEmpty()) {
+            sugerencias.add(new SugerenciaDTO(
+                    "positivo",
+                    "¡Buen trabajo! No se detectaron áreas críticas de mejora en esta entrevista.",
+                    null));
+        }
+
+        return sugerencias;
+    }
+
+
     private Set<String> tokenizar(String texto) {
         if (texto == null || texto.isBlank()) {
             return Set.of();

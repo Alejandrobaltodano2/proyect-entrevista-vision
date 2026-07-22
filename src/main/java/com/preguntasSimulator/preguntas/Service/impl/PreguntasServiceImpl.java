@@ -5,8 +5,7 @@ import com.preguntasSimulator.preguntas.mappers.PreguntasMapper;
 import com.preguntasSimulator.preguntas.models.Preguntas;
 import com.preguntasSimulator.preguntas.models.dtos.PreguntasDTO;
 import com.preguntasSimulator.preguntas.repository.PreguntasRepository;
-import lombok.AllArgsConstructor;
-import lombok.NoArgsConstructor;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

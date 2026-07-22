@@ -44,8 +44,7 @@ public class AuthController {
 
         Usuario usuario = Usuario.builder()
                 .username(datos.username())
-                // Nunca se guarda la contraseña tal cual: encode() aplica
-                // BCrypt y genera el hash que se persiste en la BD.
+
                 .password(passwordEncoder.encode(datos.password()))
                 .nombres(datos.nombres())
                 .apellidos(datos.apellidos())
@@ -54,9 +53,7 @@ public class AuthController {
 
         usuarioRepository.save(usuario);
 
-        // Se le devuelve el token de una vez para que quede logueado
-        // inmediatamente despues de registrarse, sin tener que hacer login
-        // aparte.
+
         String token = jwtService.generarToken(usuario.getUsername());
         return ResponseEntity.status(HttpStatus.CREATED).body(new AuthResponseDTO(token, usuario.getUsername()));
     }

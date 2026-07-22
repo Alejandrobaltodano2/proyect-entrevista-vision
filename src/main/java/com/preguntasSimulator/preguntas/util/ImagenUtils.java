@@ -15,11 +15,7 @@ public final class ImagenUtils {
     private ImagenUtils() {
     }
 
-    /**
-     * @param dataUrl data URL recibida del navegador (ej. "data:image/jpeg;base64,...")
-     * @return matriz BGR decodificada, o {@code null} si la data URL es invalida
-     *         o la imagen no pudo decodificarse.
-     */
+
     public static Mat dataUrlToBgr(String dataUrl) {
         if (dataUrl == null || dataUrl.isBlank()) {
             return null;

@@ -4,13 +4,13 @@ import com.preguntasSimulator.preguntas.Service.VisionService;
 import com.preguntasSimulator.preguntas.models.dtos.AnalisisFrameDTO;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
-import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfRect;
 import org.opencv.core.Rect;
 import org.opencv.core.Size;
+import org.opencv.imgproc.CLAHE;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.objdetect.CascadeClassifier;
 import org.slf4j.Logger;
@@ -27,17 +27,16 @@ import java.util.List;
 
 
 @Service
-@DependsOn("openCvConfig")
 @AllArgsConstructor
 @NoArgsConstructor
 public class VisionServiceImpl implements VisionService {
 
     private static final Logger log = LoggerFactory.getLogger(VisionServiceImpl.class);
 
-    // Parametros de deteccion (identicos a los del Python original)
-    private static final double FACE_SCALE = 1.1;
+
+    private static final double FACE_SCALE = 1.08;
     private static final int FACE_NEIGHBORS = 5;
-    private static final Size FACE_MIN_SIZE = new Size(60, 60);
+    private static final Size FACE_MIN_SIZE = new Size(40, 40);
 
     private static final double EYE_SCALE = 1.1;
     private static final int EYE_NEIGHBORS = 10;
@@ -46,22 +45,27 @@ public class VisionServiceImpl implements VisionService {
     private CascadeClassifier faceCascade;
     private CascadeClassifier eyeCascade;
 
-    /**
-     * Carga los modelos Haar Cascade una sola vez, al arrancar el bean.
-     * CascadeClassifier de OpenCV solo acepta rutas de archivo reales,
-     * por eso los recursos del classpath se copian primero a un archivo temporal.
-     */
+    private CascadeClassifier eyeGlassesCascade;
+
+    private CLAHE clahe;
+
+
     @PostConstruct
     public void cargarModelos() {
         faceCascade = new CascadeClassifier(
                 extraerRecursoATemporal("haarcascades/haarcascade_frontalface_default.xml"));
         eyeCascade = new CascadeClassifier(
                 extraerRecursoATemporal("haarcascades/haarcascade_eye.xml"));
+        eyeGlassesCascade = new CascadeClassifier(
+                extraerRecursoATemporal("haarcascades/haarcascade_eye_tree_eyeglasses.xml"));
 
-        if (faceCascade.empty() || eyeCascade.empty()) {
+
+        clahe = Imgproc.createCLAHE(3.0, new Size(8, 8));
+
+        if (faceCascade.empty() || eyeCascade.empty() || eyeGlassesCascade.empty()) {
             log.error("No se pudieron cargar los clasificadores Haar Cascade");
         } else {
-            log.info("Clasificadores Haar Cascade (rostro/ojos) cargados correctamente");
+            log.info("Clasificadores Haar Cascade (rostro/ojos/ojos-con-lentes) cargados correctamente");
         }
     }
 
@@ -87,11 +91,10 @@ public class VisionServiceImpl implements VisionService {
         }
     }
 
-    /** Convierte a escala de grises y ecualiza el histograma. */
     private Mat preprocesar(Mat frameBgr) {
         Mat gray = new Mat();
         Imgproc.cvtColor(frameBgr, gray, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.equalizeHist(gray, gray);
+        clahe.apply(gray, gray);
         return gray;
     }
 
@@ -106,7 +109,6 @@ public class VisionServiceImpl implements VisionService {
         }
     }
 
-    /** Devuelve el rostro (bounding box) con mayor area. */
     private Rect rostroMasGrande(Rect[] faces) {
         Rect mayor = faces[0];
         for (Rect r : faces) {
@@ -117,34 +119,53 @@ public class VisionServiceImpl implements VisionService {
         return mayor;
     }
 
-    /**
-     * Busca ojos dentro de la mitad superior del rostro.
-     * Limitar la ROI a la mitad superior reduce falsos positivos
-     * causados por nariz y boca.
-     */
     private List<Rect> detectarOjos(Mat gray, Rect rostro) {
         int altoMitad = rostro.height / 2;
         Rect roiRect = new Rect(rostro.x, rostro.y, rostro.width, altoMitad);
+
+
+        if (roiRect.width < EYE_MIN_SIZE.width || roiRect.height < EYE_MIN_SIZE.height) {
+            log.debug("ROI de ojos demasiado pequeña ({}x{}), se omite deteccion de ojos",
+                    roiRect.width, roiRect.height);
+            return List.of();
+        }
+
         Mat roi = new Mat(gray, roiRect);
         MatOfRect ojosDetectados = new MatOfRect();
 
         try {
-            eyeCascade.detectMultiScale(
-                    roi, ojosDetectados, EYE_SCALE, EYE_NEIGHBORS, 0, EYE_MIN_SIZE, new Size());
+            List<Rect> ojosFiltrados = buscarOjosFiltrados(eyeCascade, roi, rostro, ojosDetectados);
 
-            // Filtro adicional: el ojo debe estar en el tercio superior de la ROI
-            int tercioSuperior = rostro.height / 3;
-            List<Rect> ojosFiltrados = new ArrayList<>();
-            for (Rect ojo : ojosDetectados.toArray()) {
-                if (ojo.y < tercioSuperior) {
-                    ojosFiltrados.add(ojo);
+
+            if (ojosFiltrados.size() < 2) {
+                ojosDetectados.release();
+                ojosDetectados = new MatOfRect();
+                List<Rect> ojosConLentes = buscarOjosFiltrados(eyeGlassesCascade, roi, rostro, ojosDetectados);
+                if (ojosConLentes.size() > ojosFiltrados.size()) {
+                    ojosFiltrados = ojosConLentes;
                 }
             }
+
             return ojosFiltrados;
         } finally {
             roi.release();
             ojosDetectados.release();
         }
+    }
+
+    private List<Rect> buscarOjosFiltrados(CascadeClassifier cascade, Mat roi, Rect rostro,
+                                           MatOfRect ojosDetectados) {
+        cascade.detectMultiScale(
+                roi, ojosDetectados, EYE_SCALE, EYE_NEIGHBORS, 0, EYE_MIN_SIZE, new Size());
+
+        int tercioSuperior = rostro.height / 3;
+        List<Rect> ojosFiltrados = new ArrayList<>();
+        for (Rect ojo : ojosDetectados.toArray()) {
+            if (ojo.y < tercioSuperior) {
+                ojosFiltrados.add(ojo);
+            }
+        }
+        return ojosFiltrados;
     }
 
     private String extraerRecursoATemporal(String rutaClasspath) {
