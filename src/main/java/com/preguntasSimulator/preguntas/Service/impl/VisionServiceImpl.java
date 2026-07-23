@@ -33,22 +33,19 @@ public class VisionServiceImpl implements VisionService {
 
     private static final Logger log = LoggerFactory.getLogger(VisionServiceImpl.class);
 
-
     private static final double FACE_SCALE = 1.08;
     private static final int FACE_NEIGHBORS = 5;
     private static final Size FACE_MIN_SIZE = new Size(40, 40);
 
     private static final double EYE_SCALE = 1.1;
-    private static final int EYE_NEIGHBORS = 10;
+    private static final int EYE_NEIGHBORS = 6;
     private static final Size EYE_MIN_SIZE = new Size(20, 20);
 
     private CascadeClassifier faceCascade;
     private CascadeClassifier eyeCascade;
-
     private CascadeClassifier eyeGlassesCascade;
 
     private CLAHE clahe;
-
 
     @PostConstruct
     public void cargarModelos() {
@@ -58,7 +55,6 @@ public class VisionServiceImpl implements VisionService {
                 extraerRecursoATemporal("haarcascades/haarcascade_eye.xml"));
         eyeGlassesCascade = new CascadeClassifier(
                 extraerRecursoATemporal("haarcascades/haarcascade_eye_tree_eyeglasses.xml"));
-
 
         clahe = Imgproc.createCLAHE(3.0, new Size(8, 8));
 
@@ -81,12 +77,11 @@ public class VisionServiceImpl implements VisionService {
             Rect rostroPrincipal = rostroMasGrande(faces);
             List<Rect> ojos = detectarOjos(gray, rostroPrincipal);
 
-            boolean mirando = ojos.size() >= 2;
+            boolean mirando = ojos.size() >= 1;
             String estado = mirando ? "ok" : "no_eyes";
 
             return new AnalisisFrameDTO(mirando, estado, faces.length, ojos.size());
         } finally {
-
             gray.release();
         }
     }
@@ -123,7 +118,6 @@ public class VisionServiceImpl implements VisionService {
         int altoMitad = rostro.height / 2;
         Rect roiRect = new Rect(rostro.x, rostro.y, rostro.width, altoMitad);
 
-
         if (roiRect.width < EYE_MIN_SIZE.width || roiRect.height < EYE_MIN_SIZE.height) {
             log.debug("ROI de ojos demasiado pequeña ({}x{}), se omite deteccion de ojos",
                     roiRect.width, roiRect.height);
@@ -135,7 +129,6 @@ public class VisionServiceImpl implements VisionService {
 
         try {
             List<Rect> ojosFiltrados = buscarOjosFiltrados(eyeCascade, roi, rostro, ojosDetectados);
-
 
             if (ojosFiltrados.size() < 2) {
                 ojosDetectados.release();

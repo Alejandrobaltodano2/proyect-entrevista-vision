@@ -31,7 +31,7 @@ public class EvaluadorServiceImpl implements EvaluadorService {
     private static final int UMBRAL_RESPUESTA_BAJA = 60;
 
 
-    private static final int UMBRAL_ATENCION_BAJA = 80;
+    private static final int UMBRAL_ATENCION_BAJA = 70;
 
     private static final Pattern PUNTUACION = Pattern.compile("[.,;:!?¡¿\"'()\\[\\]]");
 
@@ -77,7 +77,7 @@ public class EvaluadorServiceImpl implements EvaluadorService {
         // --- 1. Preguntas con acierto bajo: sugerir revisar la respuesta ---
         for (int i = 0; i < resultados.size(); i++) {
             ItemEvaluacionDTO item = resultados.get(i);
-            if (item.porcentaje() < UMBRAL_RESPUESTA_BAJA) {
+            if (item.porcentaje() <= UMBRAL_RESPUESTA_BAJA) {
                 String mensaje = String.format(
                         "Pregunta %d: tu respuesta tuvo un acierto bajo (%d%%). Revisa la respuesta esperada.",
                         i + 1, item.porcentaje());
@@ -91,7 +91,7 @@ public class EvaluadorServiceImpl implements EvaluadorService {
                 .average()
                 .orElse(0);
 
-        if (promedioAtencion < UMBRAL_ATENCION_BAJA) {
+        if (promedioAtencion <= UMBRAL_ATENCION_BAJA) {
             String mensaje = String.format(
                     "Tu atención a la cámara fue de %.0f%%, por debajo del %d%% recomendado. " +
                             "Debes mirar más hacia la cámara mientras respondes.",
